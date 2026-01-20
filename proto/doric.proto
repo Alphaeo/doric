@@ -1,0 +1,115 @@
+syntax = "proto3";
+
+package doric;
+
+option go_package = "doric/backend/pkg/proto/doric";
+
+// DoricService handles project lifecycle management
+service DoricService {
+  // Build triggers a project build on the local agent
+  rpc Build(BuildRequest) returns (stream BuildResponse);
+
+  // Deploy sends a built artifact to the backend cloud
+  rpc Deploy(DeployRequest) returns (stream DeployResponse);
+
+  // Logs streams logs from a running application
+  rpc Logs(LogRequest) returns (stream LogResponse);
+
+  // Control manages the state of a deployed application
+  rpc Control(ControlRequest) returns (ControlResponse);
+}
+
+message BuildRequest {
+  string project_id = 1;
+  string source_path = 2;
+  map<string, string> env_vars = 3;
+}
+
+message BuildResponse {
+  string log_line = 1;
+  float progress = 2;
+  bool success = 3;
+}
+
+message DeployRequest {
+  string build_id = 1;
+  string target_env = 2; // e.g., "staging", "production"
+}
+
+message DeployResponse {
+  string status = 1;
+  string app_url = 2;
+  bool success = 3;
+}
+
+message LogRequest {
+  string app_id = 1;
+  bool follow = 2;
+}
+
+message LogResponse {
+  string timestamp = 1;
+  string message = 2;
+  string component = 3; // e.g., "api", "worker", "db"
+}
+
+message ControlRequest {
+  string app_id = 1;
+  enum Action {
+    START = 0;
+    STOP = 1;
+    RESTART = 2;
+  }
+  Action action = 2;
+}
+
+message ControlResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+// AiAssistant service for local model interaction
+service AiAssistant {
+  rpc Chat (ChatRequest) returns (ChatResponse);
+}
+
+// AuthService handles user identity and backend persistence
+service AuthService {
+  rpc GetAuthUrl(GetAuthUrlRequest) returns (GetAuthUrlResponse);
+  rpc ExchangeCode(ExchangeCodeRequest) returns (AuthResponse);
+  rpc GetCurrentUser(Empty) returns (User);
+}
+
+message ChatRequest {
+  string message = 1;
+  string context = 2;
+}
+
+message ChatResponse {
+  string reply = 1;
+}
+
+message Empty {}
+
+message User {
+  string id = 1;
+  string email = 2;
+  string name = 3;
+  string picture = 4;
+}
+
+message GetAuthUrlRequest {}
+
+message GetAuthUrlResponse {
+  string url = 1;
+}
+
+message ExchangeCodeRequest {
+  string code = 1;
+}
+
+message AuthResponse {
+  bool success = 1;
+  User user = 2;
+  string error = 3;
+}

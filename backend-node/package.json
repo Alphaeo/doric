@@ -1,0 +1,15 @@
+{
+    "name": "doric-backend-node",
+    "version": "1.0.0",
+    "type": "module",
+    "scripts": {
+        "start": "node server.js"
+    },
+    "dependencies": {
+        "@grpc/grpc-js": "^1.9.0",
+        "@grpc/proto-loader": "^0.7.10",
+        "dotenv": "^16.3.1",
+        "google-auth-library": "^9.4.1",
+        "pg": "^8.11.3"
+    }
+}

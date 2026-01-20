@@ -1,0 +1,16 @@
+{
+    "name": "doric-root",
+    "version": "1.0.0",
+    "private": true,
+    "scripts": {
+        "desktop": "npm run start --prefix desktop",
+        "cloud": "npm run dev --prefix cloud",
+        "agent": "go run agent/main.go",
+        "backend": "go run backend/main.go",
+        "all": "concurrently \"npm run desktop\" \"npm run cloud\"",
+        "install-all": "npm install --prefix desktop && npm install --prefix cloud"
+    },
+    "devDependencies": {
+        "concurrently": "^8.2.2"
+    }
+}

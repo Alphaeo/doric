@@ -1,0 +1,6 @@
+node_modules
+.env
+backend-node/.env
+backend/.env
+backend-node/.env.example
+backend/.env.example    

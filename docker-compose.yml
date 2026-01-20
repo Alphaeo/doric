@@ -1,0 +1,60 @@
+version: '3.8'
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile
+    ports:
+      - "50051:50051"
+    environment:
+      - DATABASE_URL=postgres://doric:doric@db:5432/doric?sslmode=disable
+      - MINIO_ENDPOINT=minio:9000
+    depends_on:
+      - db
+      - minio
+
+  frontend:
+    build:
+      context: .
+      dockerfile: ./doric-core-ui/Dockerfile.web
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+  agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    environment:
+      - BACKEND_ADDR=backend:50051
+    depends_on:
+      - backend
+
+  db:
+    image: postgres:15-alpine
+    environment:
+      - POSTGRES_USER=doric
+      - POSTGRES_PASSWORD=doric
+      - POSTGRES_DB=doric
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  minio:
+    image: minio/minio
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      - MINIO_ROOT_USER=doric
+      - MINIO_ROOT_PASSWORD=doricseed
+    command: server /data --console-address ":9001"
+    volumes:
+      - minio_data:/data
+
+volumes:
+  postgres_data:
+  minio_data:

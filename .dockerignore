@@ -1,0 +1,11 @@
+.git
+**/node_modules
+**/dist
+bin
+*.exe
+*.test
+.github
+.vscode
+.agent
+backend-node/
+release/
