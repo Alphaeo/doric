@@ -1,60 +1,142 @@
 version: '3.8'
 
-services:
-  backend:
-    build:
-      context: .
-      dockerfile: ./backend/Dockerfile
-    ports:
-      - "50051:50051"
-    environment:
-      - DATABASE_URL=postgres://doric:doric@db:5432/doric?sslmode=disable
-      - MINIO_ENDPOINT=minio:9000
-    depends_on:
-      - db
-      - minio
-
-  frontend:
-    build:
-      context: .
-      dockerfile: ./doric-core-ui/Dockerfile.web
-    ports:
-      - "8080:80"
-    depends_on:
-      - backend
-
-  agent:
-    build:
-      context: ./agent
-      dockerfile: Dockerfile
-    environment:
-      - BACKEND_ADDR=backend:50051
-    depends_on:
-      - backend
-
-  db:
-    image: postgres:15-alpine
-    environment:
-      - POSTGRES_USER=doric
-      - POSTGRES_PASSWORD=doric
-      - POSTGRES_DB=doric
-    ports:
-      - "5432:5432"
-    volumes:
-      - postgres_data:/var/lib/postgresql/data
-
-  minio:
-    image: minio/minio
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    environment:
-      - MINIO_ROOT_USER=doric
-      - MINIO_ROOT_PASSWORD=doricseed
-    command: server /data --console-address ":9001"
-    volumes:
-      - minio_data:/data
+networks:
+  doric:
+    name: doric
+    driver: bridge
 
 volumes:
   postgres_data:
   minio_data:
+  traefik_certs:
+
+services:
+
+  # ── Reverse proxy + TLS auto ─────────────────────────────────────────────
+  traefik:
+    image: traefik:v3.0
+    container_name: doric-traefik
+    restart: unless-stopped
+    command:
+      - "--api.dashboard=true"
+      - "--providers.docker=true"
+      - "--providers.docker.network=doric"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--entrypoints.web.http.redirections.entrypoint.to=websecure"
+      - "--entrypoints.web.http.redirections.entrypoint.scheme=https"
+      - "--entrypoints.websecure.address=:443"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge=true"
+      - "--certificatesresolvers.letsencrypt.acme.httpchallenge.entrypoint=web"
+      - "--certificatesresolvers.letsencrypt.acme.email=${ACME_EMAIL:-admin@doric.dev}"
+      - "--certificatesresolvers.letsencrypt.acme.storage=/certs/acme.json"
+      - "--log.level=INFO"
+    ports:
+      - "80:80"
+      - "443:443"
+      - "8090:8080"  # Dashboard Traefik (dev uniquement)
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - traefik_certs:/certs
+    networks:
+      - doric
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik-dashboard.rule=Host(`traefik.localhost`)"
+      - "traefik.http.routers.traefik-dashboard.service=api@internal"
+
+  # ── Base de données ───────────────────────────────────────────────────────
+  db:
+    image: postgres:15-alpine
+    container_name: doric-db
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: doric
+      POSTGRES_PASSWORD: doric
+      POSTGRES_DB: doric
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - doric
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U doric"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Stockage objets (artefacts de build) ──────────────────────────────────
+  minio:
+    image: minio/minio
+    container_name: doric-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: doric
+      MINIO_ROOT_PASSWORD: doricseed
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio_data:/data
+    networks:
+      - doric
+
+  # ── Control Plane (gRPC backend) ──────────────────────────────────────────
+  backend:
+    build:
+      context: .
+      dockerfile: ./backend/Dockerfile
+    container_name: doric-backend
+    restart: unless-stopped
+    ports:
+      - "50051:50051"
+    environment:
+      DATABASE_URL: postgres://doric:doric@db:5432/doric?sslmode=disable
+      MINIO_ENDPOINT: minio:9000
+      AGENT_ADDR: http://agent:50052
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:-}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:-}
+    depends_on:
+      db:
+        condition: service_healthy
+    networks:
+      - doric
+
+  # ── Agent VPS ─────────────────────────────────────────────────────────────
+  agent:
+    build:
+      context: ./agent
+      dockerfile: Dockerfile
+    container_name: doric-agent
+    restart: unless-stopped
+    ports:
+      - "50052:50052"
+    environment:
+      AGENT_PORT: "50052"
+    # L'agent a besoin du socket Docker pour builder et lancer des containers
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    networks:
+      - doric
+    depends_on:
+      - backend
+
+  # ── Dashboard Web (optionnel, accès browser) ──────────────────────────────
+  frontend:
+    build:
+      context: .
+      dockerfile: ./doric-core-ui/Dockerfile.web
+    container_name: doric-frontend
+    restart: unless-stopped
+    networks:
+      - doric
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.doric-ui.rule=Host(`app.localhost`)"
+      - "traefik.http.routers.doric-ui.entrypoints=websecure"
+      - "traefik.http.routers.doric-ui.tls.certresolver=letsencrypt"
+      - "traefik.http.services.doric-ui.loadbalancer.server.port=80"
+    depends_on:
+      - backend

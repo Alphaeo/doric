@@ -4,112 +4,152 @@ package doric;
 
 option go_package = "doric/backend/pkg/proto/doric";
 
-// DoricService handles project lifecycle management
+// ── DoricService : cycle de vie des projets ───────────────────────────────
+
 service DoricService {
-  // Build triggers a project build on the local agent
-  rpc Build(BuildRequest) returns (stream BuildResponse);
-
-  // Deploy sends a built artifact to the backend cloud
-  rpc Deploy(DeployRequest) returns (stream DeployResponse);
-
-  // Logs streams logs from a running application
-  rpc Logs(LogRequest) returns (stream LogResponse);
-
-  // Control manages the state of a deployed application
+  rpc Build(BuildRequest)     returns (stream BuildResponse);
+  rpc Deploy(DeployRequest)   returns (stream DeployResponse);
+  rpc Logs(LogRequest)        returns (stream LogResponse);
   rpc Control(ControlRequest) returns (ControlResponse);
 }
 
 message BuildRequest {
-  string project_id = 1;
+  string project_id  = 1;
   string source_path = 2;
   map<string, string> env_vars = 3;
 }
 
 message BuildResponse {
   string log_line = 1;
-  float progress = 2;
-  bool success = 3;
+  float  progress = 2;
+  bool   success  = 3;
 }
 
+// DeployRequest — utilisé par Electron pour lancer un deploy via le backend
 message DeployRequest {
-  string build_id = 1;
-  string target_env = 2; // e.g., "staging", "production"
+  string project_id = 1;
+  string repo_url   = 2;
+  string branch     = 3;
+  string target_env = 4; // "development" | "staging" | "production"
+  string domain     = 5; // domaine souhaité (ex: myapp.doric.dev)
+  map<string, string> env_vars = 6;
 }
 
+// DeployResponse — streamed par le backend vers Electron
 message DeployResponse {
-  string status = 1;
-  string app_url = 2;
-  bool success = 3;
+  string log_line = 1;
+  float  progress = 2;
+  bool   done     = 3;
+  bool   success  = 4;
+  string app_url  = 5;
+  string status   = 6; // "cloning" | "building" | "deploying" | "live" | "failed"
 }
 
 message LogRequest {
   string app_id = 1;
-  bool follow = 2;
+  bool   follow = 2;
 }
 
 message LogResponse {
   string timestamp = 1;
-  string message = 2;
-  string component = 3; // e.g., "api", "worker", "db"
+  string message   = 2;
+  string component = 3;
 }
 
 message ControlRequest {
   string app_id = 1;
   enum Action {
-    START = 0;
-    STOP = 1;
+    START   = 0;
+    STOP    = 1;
     RESTART = 2;
   }
   Action action = 2;
 }
 
 message ControlResponse {
-  bool success = 1;
+  bool   success = 1;
   string message = 2;
 }
 
-// AiAssistant service for local model interaction
-service AiAssistant {
-  rpc Chat (ChatRequest) returns (ChatResponse);
+// ── AgentService : appelé par le backend sur le VPS ──────────────────────
+
+service AgentService {
+  rpc Deploy(AgentDeployRequest) returns (stream AgentDeployResponse);
+  rpc Control(AgentControlRequest) returns (AgentControlResponse);
+  rpc Logs(AgentLogRequest)     returns (stream LogResponse);
 }
 
-// AuthService handles user identity and backend persistence
-service AuthService {
-  rpc GetAuthUrl(GetAuthUrlRequest) returns (GetAuthUrlResponse);
-  rpc ExchangeCode(ExchangeCodeRequest) returns (AuthResponse);
-  rpc GetCurrentUser(Empty) returns (User);
+message AgentDeployRequest {
+  string project_id = 1;
+  string repo_url   = 2;
+  string branch     = 3;
+  string domain     = 4;
+  map<string, string> env_vars = 5;
+}
+
+message AgentDeployResponse {
+  string log_line = 1;
+  bool   done     = 2;
+  bool   success  = 3;
+  string app_url  = 4;
+}
+
+message AgentControlRequest {
+  string container_name = 1;
+  string action         = 2; // "start" | "stop" | "restart" | "remove"
+}
+
+message AgentControlResponse {
+  bool   success = 1;
+  string message = 2;
+}
+
+message AgentLogRequest {
+  string container_name = 1;
+  bool   follow         = 2;
+  int32  tail           = 3;
+}
+
+// ── AiAssistant ───────────────────────────────────────────────────────────
+
+service AiAssistant {
+  rpc Chat(ChatRequest) returns (ChatResponse);
 }
 
 message ChatRequest {
   string message = 1;
   string context = 2;
+  string model   = 3; // "doric" | "qwen2.5-coder:1.5b" | ...
 }
 
 message ChatResponse {
   string reply = 1;
 }
 
+// ── AuthService ───────────────────────────────────────────────────────────
+
+service AuthService {
+  rpc GetAuthUrl(GetAuthUrlRequest)   returns (GetAuthUrlResponse);
+  rpc ExchangeCode(ExchangeCodeRequest) returns (AuthResponse);
+  rpc GetCurrentUser(Empty)           returns (User);
+}
+
 message Empty {}
 
 message User {
-  string id = 1;
-  string email = 2;
-  string name = 3;
+  string id      = 1;
+  string email   = 2;
+  string name    = 3;
   string picture = 4;
 }
 
-message GetAuthUrlRequest {}
+message GetAuthUrlRequest  {}
+message GetAuthUrlResponse { string url = 1; }
 
-message GetAuthUrlResponse {
-  string url = 1;
-}
-
-message ExchangeCodeRequest {
-  string code = 1;
-}
+message ExchangeCodeRequest { string code = 1; }
 
 message AuthResponse {
-  bool success = 1;
-  User user = 2;
-  string error = 3;
+  bool   success = 1;
+  User   user    = 2;
+  string error   = 3;
 }

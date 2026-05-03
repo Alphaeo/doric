@@ -1,26 +1,24 @@
-# Build stage
 FROM golang:1.21-alpine AS builder
 
 WORKDIR /app
 
-# Install dependencies
-COPY go.mod go.sum ./
+# git pour les clones, curl pour healthcheck
+RUN apk add --no-cache git
+
+COPY go.mod ./
 RUN go mod download
 
-# Copy source
-COPY . .
-
-# Build the binary
+COPY main.go .
 RUN CGO_ENABLED=0 GOOS=linux go build -o doric-agent main.go
 
-# Run stage
+# ── Runtime ────────────────────────────────────────────────────────────────
 FROM alpine:latest
 
-WORKDIR /root/
+# git (clone repos), docker CLI (build/run containers)
+RUN apk add --no-cache git docker-cli
 
-# Copy binary from builder
+WORKDIR /root/
 COPY --from=builder /app/doric-agent .
 
-# Agent might need Docker-in-Docker or access to host docker socket
-# For now, just the basic binary execution
+EXPOSE 50052
 CMD ["./doric-agent"]
